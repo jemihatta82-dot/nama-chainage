@@ -87,6 +87,27 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 10px; }
 .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 .load button { margin-top: 12px; font: inherit; font-weight: 600; padding: 10px 14px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-fg); cursor: pointer; }
+.sheet {
+  position: fixed; z-index: 1200; left: max(10px, env(safe-area-inset-left, 0px)); right: max(10px, env(safe-area-inset-right, 0px));
+  bottom: max(10px, env(safe-area-inset-bottom, 0px)); max-width: 560px; margin: 0 auto; max-height: 86vh; overflow-y: auto;
+  background: var(--surface); border-radius: 16px; padding: 16px; box-shadow: 0 6px 26px rgba(0,0,0,.5); display: grid; gap: 10px;
+}
+.sheet[hidden] { display: none; }
+.sheet h3 { margin: 0; font-size: 1.05rem; }
+.sheet label { font-size: .85rem; color: var(--muted); }
+.sheet input[type=text], .sheet textarea {
+  font: inherit; width: 100%; padding: 11px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+}
+.sheet textarea { font: .78rem var(--mono); resize: vertical; }
+.radio { display: flex; gap: 8px; align-items: flex-start; color: var(--fg) !important; font-size: .95rem !important; }
+.radio input { margin-top: 4px; }
+.row3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.sheet button, .btns button.wide {
+  font: inherit; font-weight: 600; padding: 11px; border-radius: 10px; cursor: pointer; min-height: 44px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+}
+.sheet button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.btns button.wide { grid-column: 1 / -1; }
 .pos { filter: drop-shadow(0 0 3px rgba(0,0,0,.6)); }
 .leaflet-tooltip.cz { background: var(--ok); color: #fff; border: 0; font-weight: 700; }
 .leaflet-tooltip.cz::before { display: none; }
@@ -103,6 +124,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   <div class="side">
     <button class="fab" id="gps" type="button" aria-label="Lokasi saya">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+    </button>
+    <button class="fab" id="more" type="button" aria-label="Pembetulan dan data">
+      <svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
     </button>
     <button class="fab" id="layer" type="button" aria-label="Tukar jenis peta">
       <svg viewBox="0 0 24 24"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg>
@@ -128,9 +152,44 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   <div class="btns">
     <button id="flip" type="button" disabled>Tukar hujung mula</button>
     <button id="here" type="button" disabled>CH 0 di titik ini</button>
+    <button id="rename" class="wide" type="button" disabled>Betulkan nama jalan</button>
   </div>
   <div class="foot"><span id="coord">–</span><span id="credit"></span></div>
 </section>
+
+<div class="sheet" id="editor" hidden role="dialog" aria-label="Betulkan nama jalan">
+  <h3>Betulkan nama jalan</h3>
+  <div>
+    <label for="edname">Nama yang betul</label>
+    <input id="edname" type="text" maxlength="80" autocomplete="off">
+  </div>
+  <label class="radio"><input type="radio" name="edscope" value="comp" checked><span>Seluruh jalan ini (<span id="edlenc"></span>)</span></label>
+  <label class="radio"><input type="radio" name="edscope" value="way"><span>Segmen ini sahaja (<span id="edlenw"></span>), ditunjuk warna kuning</span></label>
+  <div class="meta">Jika dua bahagian jalan yang terputus oleh bulatan diberi nama yang sama, app akan menyambungkannya (jurang sehingga 200 m) dan chainage berterusan.</div>
+  <div class="row3">
+    <button id="edsave" class="primary" type="button">Simpan</button>
+    <button id="edrevert" type="button">Nama asal</button>
+    <button id="edcancel" type="button">Batal</button>
+  </div>
+</div>
+
+<div class="sheet" id="settings" hidden role="dialog" aria-label="Pembetulan dan data">
+  <h3>Pembetulan dan data</h3>
+  <div class="meta" id="setinfo"></div>
+  <div>
+    <label for="backup">Sandaran pembetulan (salin dan simpan di tempat selamat)</label>
+    <textarea id="backup" rows="5" spellcheck="false"></textarea>
+  </div>
+  <div class="row3">
+    <button id="bcopy" type="button">Salin</button>
+    <button id="brestore" type="button">Pulihkan daripada kotak</button>
+  </div>
+  <div class="meta" id="bmsg"></div>
+  <div class="row3">
+    <button id="reload" type="button">Muat semula data jalan</button>
+    <button id="setclose" class="primary" type="button">Tutup</button>
+  </div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script>
@@ -139,7 +198,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 var REF = { lat: 5.0267, lon: 118.3270 };   // pusat bandar Lahad Datu, hanya untuk meneka hujung mula
 var CELL = 400;                              // saiz sel grid (meter)
 
-function buildNetwork(ways) {
+function buildNetwork(ways, gap) {
+  if (gap === undefined) gap = 200;   // jurang terbesar (meter) yang disambung antara dua jalan senama
   var kx = 111320 * Math.cos(REF.lat * Math.PI / 180), ky = 110574;
   var idx = new Map(), nodes = [], edges = [], i, k;
 
@@ -160,28 +220,17 @@ function buildNetwork(ways) {
       var b = nid(w.n, w.k[k + 1], w.g[k + 1][0], w.g[k + 1][1]);
       if (a === b) continue;
       var len = Math.hypot(nodes[a].x - nodes[b].x, nodes[a].y - nodes[b].y);
-      edges.push({ a: a, b: b, len: len, seen: 0 });
+      edges.push({ a: a, b: b, len: len, seen: 0, w: w.i, bridge: false });
       nodes[a].adj.push([b, len]);
       nodes[b].adj.push([a, len]);
     }
   }
 
-  // Komponen bersambung
-  var comps = [], local = new Int32Array(nodes.length).fill(-1);
-  for (i = 0; i < nodes.length; i++) {
-    if (nodes[i].comp >= 0) continue;
-    var c = { id: comps.length, name: nodes[i].name, nodes: [], length: 0, start: -1, confirmed: false, dist: null, distStart: -1, key: '' };
-    var stack = [i]; nodes[i].comp = c.id;
-    while (stack.length) {
-      var u = stack.pop();
-      local[u] = c.nodes.length; c.nodes.push(u);
-      for (k = 0; k < nodes[u].adj.length; k++) {
-        var v = nodes[u].adj[k][0];
-        if (nodes[v].comp < 0) { nodes[v].comp = c.id; stack.push(v); }
-      }
-    }
-    comps.push(c);
-  }
+  // Komponen bersambung, kemudian sambung jalan senama yang terputus (cth. oleh bulatan)
+  var comps = computeComps(nodes);
+  if (bridgeGaps(nodes, edges, comps, gap)) comps = computeComps(nodes);
+  var local = new Int32Array(nodes.length).fill(-1);
+  for (i = 0; i < comps.length; i++) for (k = 0; k < comps[i].nodes.length; k++) local[comps[i].nodes[k]] = k;
   for (i = 0; i < edges.length; i++) comps[nodes[edges[i].a].comp].length += edges[i].len;
 
   // Hujung jalan dan permulaan lalai: hujung paling dekat dengan pusat bandar
@@ -203,6 +252,7 @@ function buildNetwork(ways) {
   // Grid ruang
   var grid = new Map();
   for (i = 0; i < edges.length; i++) {
+    if (edges[i].bridge) continue;
     var A = nodes[edges[i].a], B = nodes[edges[i].b];
     var x0 = Math.floor(Math.min(A.x, B.x) / CELL), x1 = Math.floor(Math.max(A.x, B.x) / CELL);
     var y0 = Math.floor(Math.min(A.y, B.y) / CELL), y1 = Math.floor(Math.max(A.y, B.y) / CELL);
@@ -212,7 +262,89 @@ function buildNetwork(ways) {
       arr.push(i);
     }
   }
-  return { nodes: nodes, edges: edges, comps: comps, local: local, grid: grid, stamp: 0, kx: kx, ky: ky };
+  return { nodes: nodes, edges: edges, comps: comps, local: local, grid: grid, stamp: 0, kx: kx, ky: ky, idx: idx };
+}
+
+
+function uniqueDeg(node) {
+  var u = {}, c = 0;
+  for (var k = 0; k < node.adj.length; k++) { if (!u[node.adj[k][0]]) { u[node.adj[k][0]] = 1; c++; } }
+  return c;
+}
+
+function computeComps(nodes) {
+  var comps = [], i, k;
+  for (i = 0; i < nodes.length; i++) nodes[i].comp = -1;
+  for (i = 0; i < nodes.length; i++) {
+    if (nodes[i].comp >= 0) continue;
+    var c = { id: comps.length, name: nodes[i].name, nodes: [], length: 0, start: -1, confirmed: false, dist: null, distStart: -1, key: '' };
+    var stack = [i]; nodes[i].comp = c.id;
+    while (stack.length) {
+      var u = stack.pop();
+      c.nodes.push(u);
+      for (k = 0; k < nodes[u].adj.length; k++) {
+        var v = nodes[u].adj[k][0];
+        if (nodes[v].comp < 0) { nodes[v].comp = c.id; stack.push(v); }
+      }
+    }
+    comps.push(c);
+  }
+  return comps;
+}
+
+// Sambung hujung dua bahagian jalan bernama sama jika jaraknya <= gap meter. Panjang sambungan = jarak lurus.
+function bridgeGaps(nodes, edges, comps, gap) {
+  var byName = new Map(), added = 0, i;
+  for (i = 0; i < comps.length; i++) {
+    var arr = byName.get(comps[i].name);
+    if (!arr) { arr = []; byName.set(comps[i].name, arr); }
+    arr.push(comps[i]);
+  }
+  byName.forEach(function (group) {
+    if (group.length < 2) return;
+    var ends = [];
+    group.forEach(function (c) { c.nodes.forEach(function (n) { if (uniqueDeg(nodes[n]) === 1) ends.push({ n: n, c: c.id }); }); });
+    ends.sort(function (p, q) { return nodes[p.n].x - nodes[q.n].x; });
+    var pairs = [], a, b;
+    for (a = 0; a < ends.length; a++) {
+      for (b = a + 1; b < ends.length && nodes[ends[b].n].x - nodes[ends[a].n].x <= gap; b++) {
+        if (ends[a].c === ends[b].c) continue;
+        var d = Math.hypot(nodes[ends[a].n].x - nodes[ends[b].n].x, nodes[ends[a].n].y - nodes[ends[b].n].y);
+        if (d <= gap) pairs.push([d, a, b]);
+      }
+    }
+    pairs.sort(function (p, q) { return p[0] - q[0]; });
+    var parent = {}, used = {};
+    group.forEach(function (c) { parent[c.id] = c.id; });
+    function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+    pairs.forEach(function (p) {
+      var ea = ends[p[1]], eb = ends[p[2]];
+      if (used[ea.n] || used[eb.n]) return;
+      var ra = find(ea.c), rb = find(eb.c);
+      if (ra === rb) return;
+      parent[ra] = rb; used[ea.n] = 1; used[eb.n] = 1;
+      edges.push({ a: ea.n, b: eb.n, len: p[0], seen: 0, w: 0, bridge: true });
+      nodes[ea.n].adj.push([eb.n, p[0]]); nodes[eb.n].adj.push([ea.n, p[0]]);
+      added++;
+    });
+  });
+  return added;
+}
+
+// Id way OSM yang membentuk satu jalan (tanpa sambungan buatan)
+function compWays(net, comp) {
+  var set = {}, out = [];
+  for (var i = 0; i < net.edges.length; i++) {
+    var e = net.edges[i];
+    if (!e.bridge && net.nodes[e.a].comp === comp.id && !set[e.w]) { set[e.w] = 1; out.push(e.w); }
+  }
+  return out;
+}
+
+function wayLength(net, w) {
+  var s = 0;
+  for (var i = 0; i < net.edges.length; i++) if (!net.edges[i].bridge && net.edges[i].w === w) s += net.edges[i].len;
+  return s;
 }
 
 function toXY(net, lat, lon) { return [(lon - REF.lon) * net.kx, (lat - REF.lat) * net.ky]; }
@@ -334,7 +466,7 @@ function formatCH(m) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { buildNetwork: buildNetwork, compDist: compDist, setStart: setStart, applyOverrides: applyOverrides,
+  module.exports = { buildNetwork: buildNetwork, compWays: compWays, wayLength: wayLength, compDist: compDist, setStart: setStart, applyOverrides: applyOverrides,
     endpointsOf: endpointsOf, nearestNodeInComp: nearestNodeInComp, edgesNear: edgesNear, locate: locate, formatCH: formatCH, toXY: toXY };
 }
 
@@ -347,7 +479,7 @@ if (typeof module !== 'undefined') {
   var BBOX = { s: 4.6, n: 5.35, w: 117.6, e: 119.15 }, TILES_X = 3, TILES_Y = 2;
   var ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
   var HW = 'motorway|trunk|primary|secondary|tertiary|unclassified|residential|service|living_street|track|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link';
-  var KEY_OVR = 'cg3_start_overrides', KEY_VIEW = 'cg3_view', KEY_LAYER = 'cg3_layer', DB = 'cg2', STORE = 'kv';
+  var KEY_EDITS = 'cg4_edits', KEY_VIEW = 'cg3_view', KEY_LAYER = 'cg3_layer', DB = 'cg2', STORE = 'kv';
   var LAYERS = {
     sat: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', credit: 'Imej: Esri, Maxar · Jalan: OpenStreetMap', nat: 18 },
     street: { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', credit: 'Peta & jalan: © OpenStreetMap', nat: 19 }
@@ -443,35 +575,66 @@ if (typeof module !== 'undefined') {
     return { ways: Array.from(seen.values()), failed: failed, total: total };
   }
 
-  function activate(ways) {
+  // ---- pembetulan pengguna: nama (mengikut id way OSM) dan hujung mula yang disahkan
+  var baseWays = [], baseTs = 0, edits = loadEdits();
+  function loadEdits() {
+    var e = lsGet(KEY_EDITS);
+    if (!e || typeof e !== 'object') e = {};
+    if (!e.names || typeof e.names !== 'object') e.names = {};
+    if (!Array.isArray(e.starts)) e.starts = [];
+    var old = lsGet('cg3_start_overrides');    // pindah daripada versi lama
+    if (old && !e.migrated) {
+      Object.keys(old).forEach(function (k) { var p = k.lastIndexOf('#'); if (p > 0) e.starts.push({ id: old[k], n: k.slice(0, p) }); });
+      e.migrated = 1;
+    }
+    return e;
+  }
+  function saveEdits() { lsSet(KEY_EDITS, edits); }
+
+  function activate(ways, ts) {
+    baseWays = ways; baseTs = ts || baseTs;
+    rebuild();
+  }
+  function rebuild() {
+    var ways = baseWays.map(function (w) { var n = edits.names[w.i]; return n ? { i: w.i, n: n, k: w.k, g: w.g } : w; });
     net = buildNetwork(ways);
-    applyOverrides(net, lsGet(KEY_OVR) || {});
+    edits.starts.forEach(function (en) {
+      var ni = net.idx.get(en.n + '|' + en.id);
+      if (ni !== undefined) setStart(net, net.comps[net.nodes[ni].comp], ni, true);
+    });
     compEdges = net.comps.map(function () { return []; });
     for (var i = 0; i < net.edges.length; i++) {
       var e = net.edges[i], A = net.nodes[e.a], B = net.nodes[e.b];
       compEdges[A.comp].push([[A.lat, A.lon], [B.lat, B.lon]]);
     }
-    hiComp = -1;
-    $('flip').disabled = false; $('here').disabled = false;
+    hiComp = -1; cur = null;
+    $('flip').disabled = false; $('here').disabled = false; $('rename').disabled = false;
     update();
   }
+  function persistStart(comp, ni) {
+    edits.starts = edits.starts.filter(function (en) { var k = net.idx.get(en.n + '|' + en.id); return !(k !== undefined && net.nodes[k].comp === comp.id); });
+    edits.starts.push({ id: net.nodes[ni].id, n: net.nodes[ni].name });
+    saveEdits();
+  }
+
   async function init(force) {
     $('road').textContent = 'Memuat data jalan…';
     if (!force) {
       var saved = await idbGet('ways');
-      if (saved && saved.ways && saved.ways.length) { $('load').hidden = true; activate(saved.ways); return; }
+      if (saved && saved.ways && saved.ways.length) { $('load').hidden = true; activate(saved.ways, saved.ts); return; }
     }
     var res = await downloadAll();
     if (!res.ways.length) {
       $('loadmsg').textContent = 'Tidak dapat capai server peta. Semak internet, kemudian cuba lagi.';
       $('retry').hidden = false; $('road').textContent = 'Gagal memuat data'; return;
     }
-    await idbSet('ways', { ways: res.ways, ts: Date.now() });
+    var ts = Date.now();
+    await idbSet('ways', { ways: res.ways, ts: ts });
     if (res.failed) {
       $('loadmsg').textContent = res.failed + ' daripada ' + res.total + ' bahagian gagal, jadi sebahagian kawasan mungkin tiada. Tekan Cuba lagi untuk memuat semula.';
       $('retry').hidden = false;
     } else { $('load').hidden = true; }
-    activate(res.ways);
+    activate(res.ways, ts);
   }
   $('retry').addEventListener('click', function () { init(true); });
 
@@ -517,18 +680,17 @@ if (typeof module !== 'undefined') {
   map.on('dragstart', function () { stopFollow(); pinned = false; });
 
   // ---- hujung mula
-  function persist(comp, nodeIdx) { var o = lsGet(KEY_OVR) || {}; o[comp.key] = net.nodes[nodeIdx].id; lsSet(KEY_OVR, o); }
   $('flip').addEventListener('click', function () {
     if (!cur) { $('meta').textContent = 'Letakkan penanda merah di atas jalan yang berkenaan dahulu.'; return; }
     var comp = cur.comp, ends = endpointsOf(net, comp);
     if (ends.length < 2) { $('meta').textContent = 'Jalan ini tiada dua hujung jelas. Guna CH 0 di titik ini.'; return; }
     var nxt = ends[(ends.indexOf(comp.start) + 1) % ends.length];
-    setStart(net, comp, nxt, true); persist(comp, nxt); hiComp = -1; update();
+    setStart(net, comp, nxt, true); persistStart(comp, nxt); hiComp = -1; update();
   });
   $('here').addEventListener('click', function () {
     if (!cur) { $('meta').textContent = 'Letakkan penanda merah di atas jalan yang berkenaan dahulu.'; return; }
     var c = map.getCenter(), n = nearestNodeInComp(net, cur.comp, c.lat, c.lng);
-    setStart(net, cur.comp, n, true); persist(cur.comp, n); hiComp = -1; update();
+    setStart(net, cur.comp, n, true); persistStart(cur.comp, n); hiComp = -1; update();
   });
 
   // ---- carian jalan
@@ -582,6 +744,83 @@ if (typeof module !== 'undefined') {
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 }
     );
   });
+
+  // ---- betulkan nama
+  var edComp = null, edWay = 0, wayLayer = L.layerGroup().addTo(map);
+  function wayLines(w) {
+    var lines = [];
+    for (var i = 0; i < net.edges.length; i++) {
+      var e = net.edges[i];
+      if (!e.bridge && e.w === w) { var A = net.nodes[e.a], B = net.nodes[e.b]; lines.push([[A.lat, A.lon], [B.lat, B.lon]]); }
+    }
+    return lines;
+  }
+  function openEditor() {
+    if (!cur) { $('meta').textContent = 'Letakkan penanda merah di atas jalan yang hendak dibetulkan dahulu.'; return; }
+    edComp = cur.comp; edWay = cur.edge.w;
+    $('edname').value = edComp.name;
+    $('edlenc').textContent = (edComp.length / 1000).toFixed(1) + ' km';
+    $('edlenw').textContent = Math.round(wayLength(net, edWay)) + ' m';
+    document.querySelector('input[name=edscope][value=comp]').checked = true;
+    wayLayer.clearLayers();
+    L.polyline(wayLines(edWay), { color: '#facc15', weight: 8, opacity: .95, interactive: false }).addTo(wayLayer);
+    $('editor').hidden = false;
+  }
+  function closeEditor() { $('editor').hidden = true; wayLayer.clearLayers(); }
+  function busyRebuild() {
+    $('meta').textContent = 'Mengemas kini jalan…';
+    setTimeout(rebuild, 30);
+  }
+  $('rename').addEventListener('click', openEditor);
+  $('edcancel').addEventListener('click', closeEditor);
+  $('edsave').addEventListener('click', function () {
+    var name = $('edname').value.trim().slice(0, 80);
+    if (!name) { $('edname').focus(); return; }
+    var scope = document.querySelector('input[name=edscope]:checked').value;
+    if (scope === 'comp') {
+      var old = edComp.name, ids = {};
+      edComp.nodes.forEach(function (n) { ids[net.nodes[n].id] = 1; });
+      compWays(net, edComp).forEach(function (w) { edits.names[w] = name; });
+      edits.starts.forEach(function (en) { if (en.n === old && ids[en.id]) en.n = name; });
+    } else {
+      edits.names[edWay] = name;
+    }
+    saveEdits(); closeEditor(); busyRebuild();
+  });
+  $('edrevert').addEventListener('click', function () {
+    var scope = document.querySelector('input[name=edscope]:checked').value;
+    if (scope === 'comp') compWays(net, edComp).forEach(function (w) { delete edits.names[w]; });
+    else delete edits.names[edWay];
+    saveEdits(); closeEditor(); busyRebuild();
+  });
+
+  // ---- tetapan, sandaran
+  function backupText() { return JSON.stringify({ names: edits.names, starts: edits.starts }); }
+  function openSettings() {
+    var nNames = Object.keys(edits.names).length, bridges = net ? net.edges.filter(function (e) { return e.bridge; }).length : 0;
+    $('setinfo').textContent = net
+      ? net.comps.length + ' jalan. Nama dibetulkan: ' + nNames + ' segmen. Hujung mula disahkan: ' + edits.starts.length + '. Jurang disambung automatik: ' + bridges + '. Data dimuat ' + (baseTs ? new Date(baseTs).toLocaleDateString('ms-MY') : '–') + '.'
+      : 'Data jalan belum dimuat.';
+    $('backup').value = backupText(); $('bmsg').textContent = '';
+    $('settings').hidden = false;
+  }
+  $('more').addEventListener('click', openSettings);
+  $('setclose').addEventListener('click', function () { $('settings').hidden = true; });
+  $('bcopy').addEventListener('click', function () {
+    var ta = $('backup');
+    var done = function () { $('bmsg').textContent = 'Disalin. Simpan teks ini di Nota atau WhatsApp anda sendiri.'; };
+    var fallback = function () { ta.focus(); ta.select(); $('bmsg').textContent = 'Teks dipilih. Tekan Salin pada papan kekunci telefon.'; };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(done, fallback); else fallback();
+  });
+  $('brestore').addEventListener('click', function () {
+    try {
+      var o = JSON.parse($('backup').value);
+      if (!o || typeof o.names !== 'object' || !Array.isArray(o.starts)) throw new Error('format');
+      edits = { names: o.names, starts: o.starts, migrated: 1 }; saveEdits();
+      $('bmsg').textContent = 'Dipulihkan.'; $('settings').hidden = true; busyRebuild();
+    } catch (e) { $('bmsg').textContent = 'Teks sandaran tidak sah. Tampal teks yang disalin tadi.'; }
+  });
+  $('reload').addEventListener('click', function () { $('settings').hidden = true; init(true); });
 
   init(false);
 })();
