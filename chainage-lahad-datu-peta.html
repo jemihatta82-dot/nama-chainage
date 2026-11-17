@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="ms">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Peta Chainage Lahad Datu</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+/* Susun atur: peta penuh skrin; bar carian di atas; penanda silang di tengah; kad maklumat di bawah. */
+:root {
+  --bg: #f3f5f2; --surface: #ffffff; --fg: #1b2420; --muted: #5d6b64;
+  --line: #d7ded9; --accent: #0b6e4f; --accent-fg: #ffffff; --blue: #0a84c6;
+  --warn: #b45309; --ok: #1d7a3c; --pin: #e11d2e;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101512; --surface: #18201b; --fg: #e8eeea; --muted: #9aa8a0;
+    --line: #2b3830; --accent: #4fd1a0; --accent-fg: #06251a; --blue: #38b6f0;
+    --warn: #f0a04b; --ok: #5fd47f; --pin: #ff5a68;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body { background: var(--bg); color: var(--fg); font: 16px/1.4 var(--font); }
+#map { position: fixed; inset: 0; background: #1c2420; }
+.leaflet-container { font: inherit; }
+
+.top {
+  position: fixed; z-index: 1000; top: max(10px, env(safe-area-inset-top, 0px));
+  left: max(10px, env(safe-area-inset-left, 0px)); right: max(10px, env(safe-area-inset-right, 0px));
+  display: flex; gap: 10px; align-items: flex-start; pointer-events: none;
+}
+.search { flex: 1; min-width: 0; pointer-events: auto; position: relative; }
+.search input {
+  width: 100%; font: inherit; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--fg); box-shadow: 0 2px 10px rgba(0,0,0,.25);
+}
+.results { margin-top: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; max-height: 42vh; overflow-y: auto; box-shadow: 0 4px 14px rgba(0,0,0,.3); }
+.results[hidden] { display: none; }
+.results button { display: grid; gap: 1px; width: 100%; text-align: left; padding: 11px 14px; background: none; border: 0; border-bottom: 1px solid var(--line); color: var(--fg); font: inherit; cursor: pointer; }
+.results button:last-child { border-bottom: 0; }
+.results small { color: var(--muted); }
+.side { display: grid; gap: 10px; pointer-events: auto; }
+.fab {
+  width: 50px; height: 50px; border-radius: 50%; border: 0; background: var(--blue); color: #fff;
+  box-shadow: 0 2px 10px rgba(0,0,0,.35); cursor: pointer; display: grid; place-items: center; padding: 0;
+}
+.fab.on { outline: 3px solid #fff; }
+.fab svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.cross { position: fixed; z-index: 900; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; pointer-events: none; }
+.cross svg { width: 100%; height: 100%; overflow: visible; }
+
+.card {
+  position: fixed; z-index: 1000; left: max(10px, env(safe-area-inset-left, 0px)); right: max(10px, env(safe-area-inset-right, 0px));
+  bottom: max(10px, env(safe-area-inset-bottom, 0px)); max-width: 560px; margin: 0 auto;
+  background: var(--surface); border-radius: 16px; padding: 14px 16px; box-shadow: 0 4px 18px rgba(0,0,0,.4);
+}
+.card h2 { margin: 0 0 6px; font-size: .8rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.road { font-size: 1.15rem; font-weight: 700; overflow-wrap: anywhere; }
+.ch { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 2px 0; }
+.ch b { font: 700 2.3rem/1.1 var(--mono); color: var(--accent); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.ch b.dim { color: var(--muted); }
+.ch span { font: 1rem var(--mono); color: var(--muted); }
+.meta { color: var(--muted); font-size: .86rem; overflow-wrap: anywhere; }
+.warn { color: var(--warn); font-weight: 600; }
+.ok { color: var(--ok); font-weight: 600; }
+.btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.btns button {
+  font: inherit; font-weight: 600; padding: 10px; border-radius: 10px; cursor: pointer; min-height: 44px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+}
+.btns button:disabled { opacity: .5; cursor: default; }
+.foot { margin-top: 8px; display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: .75rem; }
+.foot span { min-width: 0; overflow-wrap: anywhere; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.load {
+  position: fixed; z-index: 1100; left: 50%; top: 28%; transform: translateX(-50%); width: min(88vw, 380px);
+  background: var(--surface); border-radius: 14px; padding: 16px; box-shadow: 0 6px 24px rgba(0,0,0,.45);
+}
+.load[hidden] { display: none; }
+.bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 10px; }
+.bar > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.load button { margin-top: 12px; font: inherit; font-weight: 600; padding: 10px 14px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-fg); cursor: pointer; }
+.pos { filter: drop-shadow(0 0 3px rgba(0,0,0,.6)); }
+.leaflet-tooltip.cz { background: var(--ok); color: #fff; border: 0; font-weight: 700; }
+.leaflet-tooltip.cz::before { display: none; }
+</style>
+</head>
+<body>
+<div id="map" aria-label="Peta"></div>
+
+<div class="top">
+  <div class="search">
+    <input id="q" type="search" placeholder="Cari nama jalan" autocomplete="off" autocapitalize="off" aria-label="Cari nama jalan">
+    <div class="results" id="results" hidden></div>
+  </div>
+  <div class="side">
+    <button class="fab" id="gps" type="button" aria-label="Lokasi saya">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+    </button>
+    <button class="fab" id="layer" type="button" aria-label="Tukar jenis peta">
+      <svg viewBox="0 0 24 24"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg>
+    </button>
+  </div>
+</div>
+
+<div class="cross" aria-hidden="true">
+  <svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="14" fill="none" stroke="var(--pin)" stroke-width="3"/><circle cx="22" cy="22" r="7" fill="var(--pin)"/><path d="M22 0v9M22 35v9M0 22h9M35 22h9" stroke="var(--pin)" stroke-width="3" stroke-linecap="round"/></svg>
+</div>
+
+<div class="load" id="load" hidden>
+  <div id="loadmsg">Memuat data jalan…</div>
+  <div class="bar"><div id="loadbar"></div></div>
+  <button id="retry" type="button" hidden>Cuba lagi</button>
+</div>
+
+<section class="card" aria-live="polite">
+  <h2>Lokasi dipilih</h2>
+  <div class="road" id="road">Menunggu data…</div>
+  <div class="ch"><b class="dim" id="ch">CH –</b><span id="km"></span></div>
+  <div class="meta" id="meta"></div>
+  <div class="btns">
+    <button id="flip" type="button" disabled>Tukar hujung mula</button>
+    <button id="here" type="button" disabled>CH 0 di titik ini</button>
+  </div>
+  <div class="foot"><span id="coord">–</span><span id="credit"></span></div>
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+// Teras chainage untuk banyak jalan. Setiap jalan = satu komponen bersambung bagi nama yang sama.
+// Format jalan masukan (ringkas): {n: nama, k: [id nod OSM], g: [[lat, lon], ...]}
+var REF = { lat: 5.0267, lon: 118.3270 };   // pusat bandar Lahad Datu, hanya untuk meneka hujung mula
+var CELL = 400;                              // saiz sel grid (meter)
+
+function buildNetwork(ways) {
+  var kx = 111320 * Math.cos(REF.lat * Math.PI / 180), ky = 110574;
+  var idx = new Map(), nodes = [], edges = [], i, k;
+
+  function nid(name, id, lat, lon) {
+    var key = name + '|' + id, n = idx.get(key);
+    if (n === undefined) {
+      n = nodes.length; idx.set(key, n);
+      nodes.push({ id: id, name: name, lat: lat, lon: lon, x: (lon - REF.lon) * kx, y: (lat - REF.lat) * ky, adj: [], comp: -1 });
+    }
+    return n;
+  }
+
+  for (i = 0; i < ways.length; i++) {
+    var w = ways[i];
+    if (!w.k || !w.g || w.k.length !== w.g.length) continue;
+    for (k = 0; k < w.k.length - 1; k++) {
+      var a = nid(w.n, w.k[k], w.g[k][0], w.g[k][1]);
+      var b = nid(w.n, w.k[k + 1], w.g[k + 1][0], w.g[k + 1][1]);
+      if (a === b) continue;
+      var len = Math.hypot(nodes[a].x - nodes[b].x, nodes[a].y - nodes[b].y);
+      edges.push({ a: a, b: b, len: len, seen: 0 });
+      nodes[a].adj.push([b, len]);
+      nodes[b].adj.push([a, len]);
+    }
+  }
+
+  // Komponen bersambung
+  var comps = [], local = new Int32Array(nodes.length).fill(-1);
+  for (i = 0; i < nodes.length; i++) {
+    if (nodes[i].comp >= 0) continue;
+    var c = { id: comps.length, name: nodes[i].name, nodes: [], length: 0, start: -1, confirmed: false, dist: null, distStart: -1, key: '' };
+    var stack = [i]; nodes[i].comp = c.id;
+    while (stack.length) {
+      var u = stack.pop();
+      local[u] = c.nodes.length; c.nodes.push(u);
+      for (k = 0; k < nodes[u].adj.length; k++) {
+        var v = nodes[u].adj[k][0];
+        if (nodes[v].comp < 0) { nodes[v].comp = c.id; stack.push(v); }
+      }
+    }
+    comps.push(c);
+  }
+  for (i = 0; i < edges.length; i++) comps[nodes[edges[i].a].comp].length += edges[i].len;
+
+  // Hujung jalan dan permulaan lalai: hujung paling dekat dengan pusat bandar
+  for (i = 0; i < comps.length; i++) {
+    var cc = comps[i], minId = Infinity, best = -1, bd = Infinity, bestAny = -1, bdAny = Infinity, j;
+    for (j = 0; j < cc.nodes.length; j++) {
+      var nn = nodes[cc.nodes[j]];
+      if (nn.id < minId) minId = nn.id;
+      var u2 = {}, cnt = 0;
+      for (k = 0; k < nn.adj.length; k++) { if (!u2[nn.adj[k][0]]) { u2[nn.adj[k][0]] = 1; cnt++; } }
+      var d = Math.hypot(nn.x, nn.y);
+      if (cnt === 1 && d < bd) { bd = d; best = cc.nodes[j]; }
+      if (d < bdAny) { bdAny = d; bestAny = cc.nodes[j]; }
+    }
+    cc.key = cc.name + '#' + minId;
+    cc.start = best >= 0 ? best : bestAny;
+  }
+
+  // Grid ruang
+  var grid = new Map();
+  for (i = 0; i < edges.length; i++) {
+    var A = nodes[edges[i].a], B = nodes[edges[i].b];
+    var x0 = Math.floor(Math.min(A.x, B.x) / CELL), x1 = Math.floor(Math.max(A.x, B.x) / CELL);
+    var y0 = Math.floor(Math.min(A.y, B.y) / CELL), y1 = Math.floor(Math.max(A.y, B.y) / CELL);
+    for (var cx = x0; cx <= x1; cx++) for (var cy = y0; cy <= y1; cy++) {
+      var gk = cx + ',' + cy, arr = grid.get(gk);
+      if (!arr) { arr = []; grid.set(gk, arr); }
+      arr.push(i);
+    }
+  }
+  return { nodes: nodes, edges: edges, comps: comps, local: local, grid: grid, stamp: 0, kx: kx, ky: ky };
+}
+
+function toXY(net, lat, lon) { return [(lon - REF.lon) * net.kx, (lat - REF.lat) * net.ky]; }
+
+function heapPush(h, item) {
+  h.push(item);
+  var i = h.length - 1;
+  while (i > 0) {
+    var p = (i - 1) >> 1;
+    if (h[p][0] <= h[i][0]) break;
+    var t = h[p]; h[p] = h[i]; h[i] = t; i = p;
+  }
+}
+function heapPop(h) {
+  var top = h[0], last = h.pop();
+  if (h.length) {
+    h[0] = last;
+    var i = 0, n = h.length;
+    for (;;) {
+      var l = 2 * i + 1, r = l + 1, m = i;
+      if (l < n && h[l][0] < h[m][0]) m = l;
+      if (r < n && h[r][0] < h[m][0]) m = r;
+      if (m === i) break;
+      var t = h[m]; h[m] = h[i]; h[i] = t; i = m;
+    }
+  }
+  return top;
+}
+
+// Jarak sepanjang jalan dari titik mula, dikira sekali bagi setiap jalan (dan dikira semula bila mula berubah)
+function compDist(net, comp) {
+  if (comp.dist && comp.distStart === comp.start) return comp.dist;
+  var n = comp.nodes.length, d = new Float64Array(n).fill(Infinity), s = net.local[comp.start];
+  d[s] = 0;
+  var heap = [[0, s]];
+  while (heap.length) {
+    var cur = heapPop(heap), du = cur[0], u = cur[1];
+    if (du > d[u]) continue;
+    var adj = net.nodes[comp.nodes[u]].adj;
+    for (var i = 0; i < adj.length; i++) {
+      var v = net.local[adj[i][0]], nd = du + adj[i][1];
+      if (nd < d[v]) { d[v] = nd; heapPush(heap, [nd, v]); }
+    }
+  }
+  comp.dist = d; comp.distStart = comp.start;
+  return d;
+}
+
+function setStart(net, comp, nodeIdx, confirmed) {
+  comp.start = nodeIdx; comp.confirmed = !!confirmed; comp.dist = null;
+}
+
+function applyOverrides(net, map) {
+  for (var i = 0; i < net.comps.length; i++) {
+    var c = net.comps[i], osmId = map[c.key];
+    if (osmId === undefined) continue;
+    for (var j = 0; j < c.nodes.length; j++) {
+      if (net.nodes[c.nodes[j]].id === osmId) { setStart(net, c, c.nodes[j], true); break; }
+    }
+  }
+}
+
+function endpointsOf(net, comp) {
+  var out = [];
+  for (var j = 0; j < comp.nodes.length; j++) {
+    var nn = net.nodes[comp.nodes[j]], u = {}, cnt = 0;
+    for (var k = 0; k < nn.adj.length; k++) { if (!u[nn.adj[k][0]]) { u[nn.adj[k][0]] = 1; cnt++; } }
+    if (cnt === 1) out.push(comp.nodes[j]);
+  }
+  return out;
+}
+
+function nearestNodeInComp(net, comp, lat, lon) {
+  var p = toXY(net, lat, lon), best = -1, bd = Infinity;
+  for (var j = 0; j < comp.nodes.length; j++) {
+    var nn = net.nodes[comp.nodes[j]], d = Math.hypot(nn.x - p[0], nn.y - p[1]);
+    if (d < bd) { bd = d; best = comp.nodes[j]; }
+  }
+  return best;
+}
+
+function edgesNear(net, x, y, radius) {
+  var out = [], r = Math.ceil(radius / CELL), cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
+  net.stamp++;
+  for (var i = cx - r; i <= cx + r; i++) for (var j = cy - r; j <= cy + r; j++) {
+    var arr = net.grid.get(i + ',' + j);
+    if (!arr) continue;
+    for (var k = 0; k < arr.length; k++) {
+      var e = net.edges[arr[k]];
+      if (e.seen === net.stamp) continue;
+      e.seen = net.stamp; out.push(e);
+    }
+  }
+  return out;
+}
+
+function locate(net, lat, lon, radius) {
+  var p = toXY(net, lat, lon), best = null, list = edgesNear(net, p[0], p[1], radius);
+  for (var i = 0; i < list.length; i++) {
+    var e = list[i], A = net.nodes[e.a], B = net.nodes[e.b];
+    var dx = B.x - A.x, dy = B.y - A.y, L2 = dx * dx + dy * dy;
+    var t = L2 ? ((p[0] - A.x) * dx + (p[1] - A.y) * dy) / L2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    var qx = A.x + t * dx, qy = A.y + t * dy, d = Math.hypot(p[0] - qx, p[1] - qy);
+    if (d <= radius && (!best || d < best.offset)) best = { edge: e, t: t, offset: d, x: qx, y: qy };
+  }
+  if (!best) return null;
+  var comp = net.comps[net.nodes[best.edge.a].comp], dist = compDist(net, comp);
+  var ca = dist[net.local[best.edge.a]] + best.t * best.edge.len;
+  var cb = dist[net.local[best.edge.b]] + (1 - best.t) * best.edge.len;
+  best.comp = comp; best.name = comp.name; best.chainage = Math.min(ca, cb);
+  return best;
+}
+
+function formatCH(m) {
+  var km = Math.floor(m / 1000), mm = Math.round(m - km * 1000);
+  if (mm === 1000) { km++; mm = 0; }
+  return 'CH ' + km + '+' + String(mm).padStart(3, '0');
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = { buildNetwork: buildNetwork, compDist: compDist, setStart: setStart, applyOverrides: applyOverrides,
+    endpointsOf: endpointsOf, nearestNodeInComp: nearestNodeInComp, edgesNear: edgesNear, locate: locate, formatCH: formatCH, toXY: toXY };
+}
+
+</script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  if (!window.L) { $('road').textContent = 'Peta tidak dapat dimuat'; $('meta').textContent = 'Perpustakaan peta gagal dimuat. Semak internet dan muat semula halaman.'; return; }
+
+  var BBOX = { s: 4.6, n: 5.35, w: 117.6, e: 119.15 }, TILES_X = 3, TILES_Y = 2;
+  var ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+  var HW = 'motorway|trunk|primary|secondary|tertiary|unclassified|residential|service|living_street|track|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link';
+  var KEY_OVR = 'cg3_start_overrides', KEY_VIEW = 'cg3_view', KEY_LAYER = 'cg3_layer', DB = 'cg2', STORE = 'kv';
+  var LAYERS = {
+    sat: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', credit: 'Imej: Esri, Maxar · Jalan: OpenStreetMap', nat: 18 },
+    street: { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', credit: 'Peta & jalan: © OpenStreetMap', nat: 19 }
+  };
+
+  var net = null, cur = null, compEdges = [], hiComp = -1, follow = false, watchId = null, raf = 0;
+  function lsGet(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+
+  // ---- peta
+  var view = lsGet(KEY_VIEW) || { lat: 5.0267, lon: 118.327, z: 14 };
+  var map = L.map('map', { zoomControl: false, attributionControl: false, minZoom: 8, maxZoom: 20 }).setView([view.lat, view.lon], view.z);
+  var layerName = lsGet(KEY_LAYER) === 'street' ? 'street' : 'sat', tileLayer = null;
+  function setLayer(n) {
+    if (tileLayer) map.removeLayer(tileLayer);
+    layerName = n; var d = LAYERS[n];
+    tileLayer = L.tileLayer(d.url, { maxZoom: 20, maxNativeZoom: d.nat }).addTo(map);
+    $('credit').textContent = d.credit; lsSet(KEY_LAYER, n);
+  }
+  setLayer(layerName);
+  $('layer').addEventListener('click', function () { setLayer(layerName === 'sat' ? 'street' : 'sat'); });
+
+  var roadLayer = L.layerGroup().addTo(map), me = L.layerGroup().addTo(map);
+
+  // ---- data jalan (IndexedDB)
+  function idb() {
+    return new Promise(function (res, rej) {
+      if (!window.indexedDB) return rej(new Error('tiada IndexedDB'));
+      var r = indexedDB.open(DB, 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore(STORE); };
+      r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); };
+    });
+  }
+  function idbGet(key) {
+    return idb().then(function (db) {
+      return new Promise(function (res, rej) {
+        var q = db.transaction(STORE).objectStore(STORE).get(key);
+        q.onsuccess = function () { res(q.result || null); }; q.onerror = function () { rej(q.error); };
+      });
+    }).catch(function () { return null; });
+  }
+  function idbSet(key, val) {
+    return idb().then(function (db) {
+      return new Promise(function (res, rej) {
+        var t = db.transaction(STORE, 'readwrite'); t.objectStore(STORE).put(val, key);
+        t.oncomplete = function () { res(true); }; t.onerror = function () { rej(t.error); };
+      });
+    }).catch(function () { return false; });
+  }
+  function tileQuery(s, w, n, e) {
+    var box = '(' + s + ',' + w + ',' + n + ',' + e + ')';
+    return '[out:json][timeout:120];(' +
+      'way["highway"~"^(' + HW + ')$"]["name"]' + box + ';' +
+      'way["highway"~"^(' + HW + ')$"]["ref"][!"name"]' + box + ';);out geom qt;';
+  }
+  async function fetchTile(q) {
+    var body = 'data=' + encodeURIComponent(q), err = null;
+    for (var round = 0; round < 2; round++) {
+      for (var i = 0; i < ENDPOINTS.length; i++) {
+        try {
+          var r = await fetch(ENDPOINTS[i], { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return (await r.json()).elements || [];
+        } catch (e) { err = e; }
+      }
+      await new Promise(function (ok) { setTimeout(ok, 4000); });
+    }
+    throw err || new Error('gagal');
+  }
+  function compact(el) {
+    if (el.type !== 'way' || !el.geometry || !el.nodes || el.nodes.length !== el.geometry.length) return null;
+    var t = el.tags || {}, name = t.name || (t.ref ? 'Laluan ' + t.ref : '');
+    if (!name) return null;
+    var g = [];
+    for (var i = 0; i < el.geometry.length; i++) {
+      var p = el.geometry[i]; if (!p) return null;
+      g.push([Math.round(p.lat * 1e6) / 1e6, Math.round(p.lon * 1e6) / 1e6]);
+    }
+    return { i: el.id, n: name, k: el.nodes, g: g };
+  }
+  async function downloadAll() {
+    var seen = new Map(), total = TILES_X * TILES_Y, done = 0, failed = 0;
+    var dLat = (BBOX.n - BBOX.s) / TILES_Y, dLon = (BBOX.e - BBOX.w) / TILES_X;
+    $('load').hidden = false; $('retry').hidden = true;
+    for (var y = 0; y < TILES_Y; y++) for (var x = 0; x < TILES_X; x++) {
+      $('loadmsg').textContent = 'Memuat data jalan: bahagian ' + (done + 1) + ' daripada ' + total + '. Hanya sekali, mungkin seminit dua.';
+      try {
+        var els = await fetchTile(tileQuery((BBOX.s + y * dLat).toFixed(4), (BBOX.w + x * dLon).toFixed(4), (BBOX.s + (y + 1) * dLat).toFixed(4), (BBOX.w + (x + 1) * dLon).toFixed(4)));
+        for (var i = 0; i < els.length; i++) { var c = compact(els[i]); if (c) seen.set(c.i, c); }
+      } catch (e) { failed++; }
+      done++; $('loadbar').style.width = (100 * done / total) + '%';
+    }
+    return { ways: Array.from(seen.values()), failed: failed, total: total };
+  }
+
+  function activate(ways) {
+    net = buildNetwork(ways);
+    applyOverrides(net, lsGet(KEY_OVR) || {});
+    compEdges = net.comps.map(function () { return []; });
+    for (var i = 0; i < net.edges.length; i++) {
+      var e = net.edges[i], A = net.nodes[e.a], B = net.nodes[e.b];
+      compEdges[A.comp].push([[A.lat, A.lon], [B.lat, B.lon]]);
+    }
+    hiComp = -1;
+    $('flip').disabled = false; $('here').disabled = false;
+    update();
+  }
+  async function init(force) {
+    $('road').textContent = 'Memuat data jalan…';
+    if (!force) {
+      var saved = await idbGet('ways');
+      if (saved && saved.ways && saved.ways.length) { $('load').hidden = true; activate(saved.ways); return; }
+    }
+    var res = await downloadAll();
+    if (!res.ways.length) {
+      $('loadmsg').textContent = 'Tidak dapat capai server peta. Semak internet, kemudian cuba lagi.';
+      $('retry').hidden = false; $('road').textContent = 'Gagal memuat data'; return;
+    }
+    await idbSet('ways', { ways: res.ways, ts: Date.now() });
+    if (res.failed) {
+      $('loadmsg').textContent = res.failed + ' daripada ' + res.total + ' bahagian gagal, jadi sebahagian kawasan mungkin tiada. Tekan Cuba lagi untuk memuat semula.';
+      $('retry').hidden = false;
+    } else { $('load').hidden = true; }
+    activate(res.ways);
+  }
+  $('retry').addEventListener('click', function () { init(true); });
+
+  // ---- maklumat di tengah peta
+  function highlight(comp) {
+    var id = comp ? comp.id : -1;
+    if (id === hiComp && !comp) return;
+    roadLayer.clearLayers(); hiComp = id;
+    if (!comp) return;
+    var lines = compEdges[comp.id];
+    L.polyline(lines, { color: '#000', weight: 9, opacity: .45, interactive: false }).addTo(roadLayer);
+    L.polyline(lines, { color: '#22d3ee', weight: 5, opacity: .95, interactive: false }).addTo(roadLayer);
+    var S = net.nodes[comp.start];
+    L.circleMarker([S.lat, S.lon], { radius: 8, color: '#fff', weight: 2, fillColor: '#1d9a45', fillOpacity: 1, interactive: false })
+      .bindTooltip('CH 0+000', { permanent: true, direction: 'top', className: 'cz', offset: [0, -6] }).addTo(roadLayer);
+  }
+
+  function update() {
+    var c = map.getCenter();
+    $('coord').textContent = c.lat.toFixed(6) + ', ' + c.lng.toFixed(6);
+    if (!net) return;
+    var mpp = 156543.03392 * Math.cos(c.lat * Math.PI / 180) / Math.pow(2, map.getZoom());
+    var rad = Math.max(25, Math.min(300, 35 * mpp));
+    var r = locate(net, c.lat, c.lng, rad);
+    cur = r;
+    if (!r) {
+      $('road').textContent = 'Tiada jalan berhampiran';
+      $('ch').textContent = 'CH –'; $('ch').className = 'dim'; $('km').textContent = '';
+      $('meta').textContent = 'Gerakkan peta supaya penanda merah berada di atas jalan.';
+      if (hiComp !== -1 && !pinned) highlight(null);
+      return;
+    }
+    $('road').textContent = r.name;
+    $('ch').textContent = formatCH(r.chainage); $('ch').className = '';
+    $('km').textContent = (r.chainage / 1000).toFixed(3) + ' km';
+    $('meta').innerHTML = (r.comp.confirmed ? '<span class="ok">Hujung mula disahkan</span>' : '<span class="warn">Hujung mula ditekaan, belum disahkan</span>') +
+      ' · panjang ' + (r.comp.length / 1000).toFixed(1) + ' km · sisi ' + Math.round(r.offset) + ' m';
+    if (r.comp.id !== hiComp) highlight(r.comp);
+  }
+  var pinned = false;
+  map.on('move', function () { if (!raf) raf = requestAnimationFrame(function () { raf = 0; update(); }); });
+  map.on('moveend', function () { var c = map.getCenter(); lsSet(KEY_VIEW, { lat: c.lat, lon: c.lng, z: map.getZoom() }); update(); });
+  map.on('dragstart', function () { stopFollow(); pinned = false; });
+
+  // ---- hujung mula
+  function persist(comp, nodeIdx) { var o = lsGet(KEY_OVR) || {}; o[comp.key] = net.nodes[nodeIdx].id; lsSet(KEY_OVR, o); }
+  $('flip').addEventListener('click', function () {
+    if (!cur) { $('meta').textContent = 'Letakkan penanda merah di atas jalan yang berkenaan dahulu.'; return; }
+    var comp = cur.comp, ends = endpointsOf(net, comp);
+    if (ends.length < 2) { $('meta').textContent = 'Jalan ini tiada dua hujung jelas. Guna CH 0 di titik ini.'; return; }
+    var nxt = ends[(ends.indexOf(comp.start) + 1) % ends.length];
+    setStart(net, comp, nxt, true); persist(comp, nxt); hiComp = -1; update();
+  });
+  $('here').addEventListener('click', function () {
+    if (!cur) { $('meta').textContent = 'Letakkan penanda merah di atas jalan yang berkenaan dahulu.'; return; }
+    var c = map.getCenter(), n = nearestNodeInComp(net, cur.comp, c.lat, c.lng);
+    setStart(net, cur.comp, n, true); persist(cur.comp, n); hiComp = -1; update();
+  });
+
+  // ---- carian jalan
+  var shown = [];
+  function renderResults() {
+    var box = $('results'), q = $('q').value.trim().toLowerCase();
+    box.textContent = '';
+    if (!net || !q) { box.hidden = true; return; }
+    shown = net.comps.filter(function (c) { return c.name.toLowerCase().indexOf(q) >= 0; })
+      .sort(function (a, b) { return b.length - a.length; }).slice(0, 8);
+    if (!shown.length) { var n = document.createElement('div'); n.style.padding = '12px 14px'; n.textContent = 'Tiada jalan sepadan.'; box.appendChild(n); box.hidden = false; return; }
+    shown.forEach(function (c, i) {
+      var b = document.createElement('button'); b.type = 'button'; b.dataset.i = i;
+      var t = document.createElement('b'); t.textContent = c.name;
+      var s = document.createElement('small'); s.textContent = (c.length / 1000).toFixed(1) + ' km · ' + (c.confirmed ? 'mula disahkan' : 'mula ditekaan');
+      b.appendChild(t); b.appendChild(s); box.appendChild(b);
+    });
+    box.hidden = false;
+  }
+  $('q').addEventListener('input', renderResults);
+  $('results').addEventListener('click', function (ev) {
+    var b = ev.target.closest('button'); if (!b) return;
+    var c = shown[+b.dataset.i], S = net.nodes[c.start];
+    stopFollow(); $('results').hidden = true; $('q').blur(); $('q').value = c.name;
+    pinned = true; map.setView([S.lat, S.lon], 17);
+  });
+
+  // ---- GPS
+  function showMe(p) {
+    me.clearLayers();
+    var ll = [p.coords.latitude, p.coords.longitude];
+    if (p.coords.accuracy) L.circle(ll, { radius: p.coords.accuracy, color: '#0a84c6', weight: 1, fillOpacity: .12, interactive: false }).addTo(me);
+    L.circleMarker(ll, { radius: 8, color: '#fff', weight: 3, fillColor: '#0a84c6', fillOpacity: 1, interactive: false, className: 'pos' }).addTo(me);
+    return ll;
+  }
+  function stopFollow() {
+    follow = false; $('gps').classList.remove('on');
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  }
+  $('gps').addEventListener('click', function () {
+    if (!('geolocation' in navigator)) { $('meta').textContent = 'Pelayar ini tiada GPS.'; return; }
+    if (follow) { stopFollow(); return; }
+    follow = true; $('gps').classList.add('on'); pinned = false;
+    watchId = navigator.geolocation.watchPosition(
+      function (p) { var ll = showMe(p); if (follow) map.setView(ll, Math.max(map.getZoom(), 17), { animate: false }); },
+      function (err) {
+        stopFollow();
+        var m = { 1: 'Kebenaran lokasi ditolak. Benarkan lokasi untuk laman ini dalam tetapan Chrome.', 2: 'Lokasi tidak tersedia. Pastikan GPS dihidupkan.', 3: 'GPS lambat memberi bacaan. Cuba di kawasan terbuka.' };
+        $('meta').textContent = m[err.code] || 'Ralat GPS.';
+      },
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 }
+    );
+  });
+
+  init(false);
+})();
+</script>
+</body>
+</html>
